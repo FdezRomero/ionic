@@ -1,4 +1,4 @@
-import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, EventEmitter, forwardRef, Input, OnDestroy, Optional, Output, Renderer, ViewChild, ViewEncapsulation } from '@angular/core';
+import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, forwardRef, Input, OnDestroy, Optional, Renderer, ViewChild, ViewEncapsulation } from '@angular/core';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 
 import { clamp, isPresent, isTrueProperty } from '../../util/util';
@@ -6,7 +6,7 @@ import { Config } from '../../config/config';
 import { DomController } from '../../platform/dom-controller';
 import { Form } from '../../util/form';
 import { Haptic } from '../../tap-click/haptic';
-import { Ion } from '../ion';
+import { BaseInput } from '../../util/base-input';
 import { Item } from '../item/item';
 import { Platform } from '../../platform/platform';
 import { PointerCoordinates, pointerCoord } from '../../util/dom';
@@ -112,7 +112,8 @@ export const RANGE_VALUE_ACCESSOR: any = {
   providers: [RANGE_VALUE_ACCESSOR],
   encapsulation: ViewEncapsulation.None,
 })
-export class Range extends Ion implements AfterViewInit, ControlValueAccessor, OnDestroy {
+export class Range extends BaseInput<any> implements AfterViewInit, ControlValueAccessor, OnDestroy {
+
   _dual: boolean;
   _pin: boolean;
   _disabled: boolean = false;
@@ -145,16 +146,6 @@ export class Range extends Ion implements AfterViewInit, ControlValueAccessor, O
   _events: UIEventManager;
 
   @ViewChild('slider') public _slider: ElementRef;
-
-  /**
-   * @hidden
-   */
-  value: any;
-
-  /**
-   * @hidden
-   */
-  id: string;
 
   /**
    * @input {number} Minimum integer value of the range. Defaults to `0`.
@@ -282,25 +273,10 @@ export class Range extends Ion implements AfterViewInit, ControlValueAccessor, O
     return null;
   }
 
-  /**
-   * @output {Range} Emitted when the range selector drag starts.
-   */
-  @Output() ionFocus: EventEmitter<Range> = new EventEmitter<Range>();
-
-  /**
-   * @output {Range} Emitted when the range value changes.
-   */
-  @Output() ionChange: EventEmitter<Range> = new EventEmitter<Range>();
-
-  /**
-   * @output {Range} Emitted when the range selector drag ends.
-   */
-  @Output() ionBlur: EventEmitter<Range> = new EventEmitter<Range>();
-
   constructor(
-    private _form: Form,
+    form: Form,
     private _haptic: Haptic,
-    @Optional() private _item: Item,
+    @Optional() item: Item,
     config: Config,
     private _plt: Platform,
     elementRef: ElementRef,
@@ -308,21 +284,15 @@ export class Range extends Ion implements AfterViewInit, ControlValueAccessor, O
     private _dom: DomController,
     private _cd: ChangeDetectorRef
   ) {
-    super(config, elementRef, renderer, 'range');
+    super(config, elementRef, renderer, 'range', form, item);
     this._events = new UIEventManager(_plt);
-    _form.register(this);
-
-    if (_item) {
-      this.id = 'rng-' + _item.registerInput('range');
-      this._lblId = 'lbl-' + _item.id;
-      _item.setElementClass('item-range', true);
-    }
   }
 
   /**
    * @hidden
    */
   ngAfterViewInit() {
+    this._init = true;
     // add touchstart/mousedown listeners
     this._events.pointerEvents({
       element: this._slider.nativeElement,
@@ -346,7 +316,7 @@ export class Range extends Ion implements AfterViewInit, ControlValueAccessor, O
     }
 
     // trigger ionFocus event
-    this.ionFocus.emit(this);
+    this._setFocus();
 
     // prevent default so scrolling does not happen
     ev.preventDefault();
@@ -405,7 +375,7 @@ export class Range extends Ion implements AfterViewInit, ControlValueAccessor, O
       this._haptic.gestureSelectionEnd();
 
       // trigger ionBlur event
-      this.ionBlur.emit(this);
+      this._setBlur();
     }
   }
 
@@ -447,14 +417,13 @@ export class Range extends Ion implements AfterViewInit, ControlValueAccessor, O
     }
 
     // value has been updated
+    let value;
     if (this._dual) {
       // dual knobs have an lower and upper value
-      if (!this.value) {
-        // ensure we're always updating the same object
-        this.value = {};
-      }
-      this.value.lower = Math.min(this._valA, this._valB);
-      this.value.upper = Math.max(this._valA, this._valB);
+      value = {
+        lower: Math.min(this._valA, this._valB),
+        upper: Math.max(this._valA, this._valB)
+      };
 
       console.debug(`range, updateKnob: ${ratio}, lower: ${this.value.lower}, upper: ${this.value.upper}`);
 
@@ -463,11 +432,11 @@ export class Range extends Ion implements AfterViewInit, ControlValueAccessor, O
       this.value = this._valA;
       console.debug(`range, updateKnob: ${ratio}, value: ${this.value}`);
     }
-
-    this._debouncer.debounce(() => {
-      this.onChange(this.value);
-      this.ionChange.emit(this);
-    });
+    this.value = value;
+    // this._debouncer.debounce(() => {
+    //   this.onChange(this.value);
+    //   this.ionChange.emit(this);
+    // });
 
     return true;
   }
@@ -572,64 +541,31 @@ export class Range extends Ion implements AfterViewInit, ControlValueAccessor, O
   writeValue(val: any) {
     if (isPresent(val)) {
       this.value = val;
-
-      if (this._dual) {
-        this._valA = val.lower;
-        this._valB = val.upper;
-        this._ratioA = this._valueToRatio(val.lower);
-        this._ratioB = this._valueToRatio(val.upper);
-
-      } else {
-        this._valA = val;
-        this._ratioA = this._valueToRatio(val);
-      }
-
-      this._updateBar();
     }
   }
 
-  /**
-   * @hidden
-   */
-  registerOnChange(fn: Function): void {
-    this._fn = fn;
-    this.onChange = (val: any) => {
-      fn(val);
-      this.onTouched();
-    };
-  }
+  updateInput() {
+    const val = this.value;
+    if (this._dual) {
+      this._valA = val.lower;
+      this._valB = val.upper;
+      this._ratioA = this._valueToRatio(val.lower);
+      this._ratioB = this._valueToRatio(val.upper);
 
-  /**
-   * @hidden
-   */
-  registerOnTouched(fn: any) { this.onTouched = fn; }
+    } else {
+      this._valA = val;
+      this._ratioA = this._valueToRatio(val);
+    }
 
-  /**
-   * @hidden
-   */
-  onChange(val: any) {
-    // used when this input does not have an ngModel or formControlName
-    this.onTouched();
+    this._updateBar();
     this._cd.detectChanges();
   }
 
   /**
    * @hidden
    */
-  onTouched() { }
-
-  /**
-   * @hidden
-   */
-  setDisabledState(isDisabled: boolean) {
-    this.disabled = isDisabled;
-  }
-
-  /**
-   * @hidden
-   */
   ngOnDestroy() {
-    this._form.deregister(this);
+    super.ngOnDestroy();
     this._events.destroy();
   }
 }

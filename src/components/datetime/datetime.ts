@@ -6,9 +6,9 @@ import { Picker } from '../picker/picker';
 import { PickerController } from '../picker/picker-controller';
 import { PickerColumn } from '../picker/picker-options';
 import { Form } from '../../util/form';
-import { Ion } from '../ion';
+import { BaseInput } from '../../util/base-input';
 import { Item } from '../item/item';
-import { deepCopy, isBlank, isPresent, isTrueProperty, isArray, isString, assert, clamp } from '../../util/util';
+import { deepCopy, isBlank, isPresent, isArray, isString, assert, clamp } from '../../util/util';
 import { dateValueRange, renderDateTime, renderTextFormat, convertFormatToKey, getValueFromFormat, parseTemplate, parseDate, updateDate, DateTimeData, convertDataToISO, daysInMonth, dateSortValue, dateDataSortValue, LocaleData } from '../../util/datetime-util';
 
 export const DATETIME_VALUE_ACCESSOR: any = {
@@ -273,15 +273,12 @@ export const DATETIME_VALUE_ACCESSOR: any = {
   providers: [DATETIME_VALUE_ACCESSOR],
   encapsulation: ViewEncapsulation.None,
 })
-export class DateTime extends Ion implements AfterContentInit, ControlValueAccessor, OnDestroy {
-  _disabled: any = false;
-  _labelId: string;
+export class DateTime extends BaseInput<string> implements AfterContentInit, ControlValueAccessor, OnDestroy {
+
   _text: string = '';
-  _fn: Function;
-  _isOpen: boolean = false;
   _min: DateTimeData;
   _max: DateTimeData;
-  _value: DateTimeData = {};
+  _timeValue: DateTimeData = {};
   _locale: LocaleData = {};
   _picker: Picker;
 
@@ -422,32 +419,19 @@ export class DateTime extends Ion implements AfterContentInit, ControlValueAcces
   @Input() placeholder: string = '';
 
   /**
-   * @output {any} Emitted when the datetime selection has changed.
-   */
-  @Output() ionChange: EventEmitter<any> = new EventEmitter();
-
-  /**
    * @output {any} Emitted when the datetime selection was cancelled.
    */
   @Output() ionCancel: EventEmitter<any> = new EventEmitter();
 
   constructor(
-    private _form: Form,
+    form: Form,
     config: Config,
     elementRef: ElementRef,
     renderer: Renderer,
-    @Optional() private _item: Item,
+    @Optional()  item: Item,
     @Optional() private _pickerCtrl: PickerController
   ) {
-    super(config, elementRef, renderer, 'datetime');
-
-    _form.register(this);
-
-    if (_item) {
-      this.id = 'dt-' + _item.registerInput('datetime');
-      this._labelId = 'lbl-' + _item.id;
-      this._item.setElementClass('item-datetime', true);
-    }
+    super(config, elementRef, renderer, 'datetime', form, item);
   }
 
   @HostListener('click', ['$event'])
@@ -463,7 +447,7 @@ export class DateTime extends Ion implements AfterContentInit, ControlValueAcces
 
   @HostListener('keyup.space')
   _keyup() {
-    if (!this._isOpen) {
+    if (!this._isFocus) {
       this.open();
     }
   }
@@ -472,7 +456,7 @@ export class DateTime extends Ion implements AfterContentInit, ControlValueAcces
    * @hidden
    */
   open() {
-    assert(!this._isOpen, 'datetime is already open');
+    assert(!this._isFocus, 'datetime is already open');
     if (this._disabled) {
       return;
     }
@@ -489,11 +473,7 @@ export class DateTime extends Ion implements AfterContentInit, ControlValueAcces
     });
     picker.addButton({
       text: this.doneText,
-      handler: (data: any) => {
-        console.debug('datetime, done', data);
-        this.onChange(data);
-        this.ionChange.emit(data);
-      }
+      handler: (data: any) => this.value = data,
     });
 
     this.generate();
@@ -504,9 +484,9 @@ export class DateTime extends Ion implements AfterContentInit, ControlValueAcces
       picker.refresh();
     });
 
-    this._isOpen = true;
+    this._setFocus();
     picker.onDidDismiss(() => {
-      this._isOpen = false;
+      this._setBlur();
     });
 
     picker.present(pickerOptions);
@@ -729,29 +709,6 @@ export class DateTime extends Ion implements AfterContentInit, ControlValueAcces
   /**
    * @hidden
    */
-  setValue(newData: any) {
-    updateDate(this._value, newData);
-  }
-
-  /**
-   * @hidden
-   */
-  getValue(): DateTimeData {
-    return this._value;
-  }
-
-  /**
-   * @hidden
-   */
-  checkHasValue(inputValue: any) {
-    if (this._item) {
-      this._item.setElementClass('input-has-value', !!(inputValue && inputValue !== ''));
-    }
-  }
-
-  /**
-   * @hidden
-   */
   updateText() {
     // create the text of the formatted data
     const template = this.displayFormat || this.pickerFormat || DEFAULT_FORMAT;
@@ -813,26 +770,11 @@ export class DateTime extends Ion implements AfterContentInit, ControlValueAcces
   }
 
   /**
-   * @input {boolean} If true, the user cannot interact with this element.
-   */
-  @Input()
-  get disabled(): boolean {
-    return this._disabled;
-  }
-
-  set disabled(val: boolean) {
-    this._disabled = isTrueProperty(val);
-    this._item && this._item.setElementClass('item-datetime-disabled', this._disabled);
-  }
-
-  /**
    * @hidden
    */
-  writeValue(val: any) {
-    console.debug('datetime, writeValue', val);
-    this.setValue(val);
+  updateInput() {
+    updateDate(this._timeValue, this.value);
     this.updateText();
-    this.checkHasValue(val);
   }
 
   /**
@@ -848,60 +790,6 @@ export class DateTime extends Ion implements AfterContentInit, ControlValueAcces
 
     // update how the datetime value is displayed as formatted text
     this.updateText();
-  }
-
-  /**
-   * @hidden
-   */
-  registerOnChange(fn: Function): void {
-    this._fn = fn;
-    this.onChange = (val: any) => {
-      console.debug('datetime, onChange', val);
-      this.setValue(val);
-      this.updateText();
-      this.checkHasValue(val);
-
-      // convert DateTimeData value to iso datetime format
-      fn(convertDataToISO(this._value));
-
-      this.onTouched();
-    };
-  }
-
-  /**
-   * @hidden
-   */
-  registerOnTouched(fn: any) { this.onTouched = fn; }
-
-  /**
-   * @hidden
-   */
-  onChange(val: any) {
-    // onChange used when there is not an formControlName
-    console.debug('datetime, onChange w/out formControlName', val);
-    this.setValue(val);
-    this.updateText();
-    this.checkHasValue(val);
-    this.onTouched();
-  }
-
-  /**
-   * @hidden
-   */
-  onTouched() { }
-
-  /**
-   * @hidden
-   */
-  setDisabledState(isDisabled: boolean) {
-    this.disabled = isDisabled;
-  }
-
-  /**
-   * @hidden
-   */
-  ngOnDestroy() {
-    this._form.deregister(this);
   }
 }
 

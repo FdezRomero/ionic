@@ -1,13 +1,13 @@
 import { AfterContentInit, Component, ContentChildren, ElementRef, EventEmitter, forwardRef, Input, HostListener, OnDestroy, Optional, Output, Renderer, QueryList, ViewEncapsulation } from '@angular/core';
-import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
+import { NG_VALUE_ACCESSOR } from '@angular/forms';
 
 import { ActionSheet } from '../action-sheet/action-sheet';
 import { Alert } from '../alert/alert';
 import { App } from '../app/app';
 import { Config } from '../../config/config';
 import { Form } from '../../util/form';
-import { Ion } from '../ion';
-import { isBlank, isCheckedProperty, isTrueProperty, deepCopy } from '../../util/util';
+import { BaseInput } from '../../util/base-input';
+import { isCheckedProperty, isTrueProperty, deepCopy } from '../../util/util';
 import { Item } from '../item/item';
 import { NavController } from '../../navigation/nav-controller';
 import { Option } from '../option/option';
@@ -141,7 +141,7 @@ export const SELECT_VALUE_ACCESSOR: any = {
   providers: [SELECT_VALUE_ACCESSOR],
   encapsulation: ViewEncapsulation.None,
 })
-export class Select extends Ion implements AfterContentInit, ControlValueAccessor, OnDestroy {
+export class Select extends BaseInput<string[]> implements AfterContentInit, OnDestroy {
   _disabled: any = false;
   _labelId: string;
   _multi: boolean = false;
@@ -149,13 +149,8 @@ export class Select extends Ion implements AfterContentInit, ControlValueAccesso
   _values: string[] = [];
   _texts: string[] = [];
   _text: string = '';
-  _fn: Function;
   _isOpen: boolean = false;
 
-  /**
-   * @hidden
-   */
-  id: string;
 
   /**
    * @input {string} The text to display on the cancel button. Default: `Cancel`.
@@ -191,33 +186,20 @@ export class Select extends Ion implements AfterContentInit, ControlValueAccesso
   @Input() selectedText: string = '';
 
   /**
-   * @output {any} Emitted when the selection has changed.
-   */
-  @Output() ionChange: EventEmitter<any> = new EventEmitter();
-
-  /**
    * @output {any} Emitted when the selection was cancelled.
    */
   @Output() ionCancel: EventEmitter<any> = new EventEmitter();
 
   constructor(
     private _app: App,
-    private _form: Form,
+    form: Form,
     public config: Config,
     elementRef: ElementRef,
     renderer: Renderer,
-    @Optional() public _item: Item,
+    @Optional() item: Item,
     @Optional() private _nav: NavController
   ) {
-    super(config, elementRef, renderer, 'select');
-
-    _form.register(this);
-
-    if (_item) {
-      this.id = 'sel-' + _item.registerInput('select');
-      this._labelId = 'lbl-' + _item.id;
-      this._item.setElementClass('item-select', true);
-    }
+    super(config, elementRef, renderer, 'select', form, item);
   }
 
   @HostListener('click', ['$event'])
@@ -283,11 +265,7 @@ export class Select extends Ion implements AfterContentInit, ControlValueAccesso
         return {
           role: (input.selected ? 'selected' : ''),
           text: input.text,
-          handler: () => {
-            this.onChange(input.value);
-            this.ionChange.emit(input.value);
-            input.ionSelect.emit(input.value);
-          }
+          handler: () => this.value = input.value
         };
       }));
       var selectCssClass = 'select-action-sheet';
@@ -340,10 +318,7 @@ export class Select extends Ion implements AfterContentInit, ControlValueAccesso
 
       overlay.addButton({
         text: this.okText,
-        handler: (selectedValues: any) => {
-          this.onChange(selectedValues);
-          this.ionChange.emit(selectedValues);
-        }
+        handler: (selectedValues: any) => this.value = selectedValues
       });
 
     }
@@ -377,20 +352,6 @@ export class Select extends Ion implements AfterContentInit, ControlValueAccesso
     return (this._multi ? this._texts : this._texts.join());
   }
 
-  /**
-   * @hidden
-   */
-  checkHasValue(inputValue: any) {
-    if (this._item) {
-      let hasValue: boolean;
-      if (Array.isArray(inputValue)) {
-        hasValue = inputValue.length > 0;
-      } else {
-        hasValue = !isBlank(inputValue);
-      }
-      this._item.setElementClass('input-has-value', hasValue);
-    }
-  }
 
   /**
    * @private
@@ -405,13 +366,13 @@ export class Select extends Ion implements AfterContentInit, ControlValueAccesso
       this._values = val.filter(o => o.selected).map(o => o.value);
     }
 
-    this._updOpts();
+    this.updateInput();
   }
 
   /**
    * @hidden
    */
-  _updOpts() {
+  updateInput() {
     this._texts = [];
 
     if (this._options) {
@@ -431,83 +392,9 @@ export class Select extends Ion implements AfterContentInit, ControlValueAccesso
   }
 
   /**
-   * @input {boolean} If true, the user cannot interact with this element.
-   */
-  @Input()
-  get disabled(): boolean {
-    return this._disabled;
-  }
-
-  set disabled(val: boolean) {
-    this._disabled = isTrueProperty(val);
-    this._item && this._item.setElementClass('item-select-disabled', this._disabled);
-  }
-
-  /**
-   * @hidden
-   */
-  writeValue(val: any) {
-    console.debug('select, writeValue', val);
-    this._values = (Array.isArray(val) ? val : isBlank(val) ? [] : [val]);
-    this._updOpts();
-    this.checkHasValue(val);
-  }
-
-  /**
    * @hidden
    */
   ngAfterContentInit() {
-    this._updOpts();
-  }
-
-  /**
-   * @hidden
-   */
-  registerOnChange(fn: Function): void {
-    this._fn = fn;
-    this.onChange = (val: any) => {
-      console.debug('select, onChange', val);
-      fn(val);
-      this._values = (Array.isArray(val) ? val : isBlank(val) ? [] : [val]);
-      this._updOpts();
-      this.checkHasValue(val);
-      this.onTouched();
-    };
-  }
-
-  /**
-   * @hidden
-   */
-  registerOnTouched(fn: any) { this.onTouched = fn; }
-
-  /**
-   * @hidden
-   */
-  onChange(val: any) {
-    // onChange used when there is not an formControlName
-    console.debug('select, onChange w/out formControlName', val);
-    this._values = (Array.isArray(val) ? val : isBlank(val) ? [] : [val]);
-    this._updOpts();
-    this.checkHasValue(val);
-    this.onTouched();
-  }
-
-  /**
-   * @hidden
-   */
-  onTouched() { }
-
-  /**
-   * @hidden
-   */
-  setDisabledState(isDisabled: boolean) {
-    this.disabled = isDisabled;
-  }
-
-  /**
-   * @hidden
-   */
-  ngOnDestroy() {
-    this._form.deregister(this);
+    this.updateInput();
   }
 }

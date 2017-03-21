@@ -1,10 +1,9 @@
 import { AfterContentInit, ChangeDetectorRef, Component, ElementRef, EventEmitter, forwardRef, HostListener, Input, OnDestroy, Optional, Output, Renderer, ViewEncapsulation } from '@angular/core';
-import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
+import { NG_VALUE_ACCESSOR } from '@angular/forms';
 
 import { Config } from '../../config/config';
 import { Form, IonicTapInput } from '../../util/form';
-import { Ion } from '../ion';
-import { isTrueProperty } from '../../util/util';
+import { BaseInput } from '../../util/base-input';
 import { Item } from '../item/item';
 
 export const CHECKBOX_VALUE_ACCESSOR: any = {
@@ -72,129 +71,29 @@ export const CHECKBOX_VALUE_ACCESSOR: any = {
   providers: [CHECKBOX_VALUE_ACCESSOR],
   encapsulation: ViewEncapsulation.None,
 })
-export class Checkbox extends Ion implements IonicTapInput, AfterContentInit, ControlValueAccessor, OnDestroy {
-  /** @hidden */
-  _checked: boolean = false;
-  /** @hidden */
-  _init: boolean;
-  /** @hidden */
-  _disabled: boolean = false;
-  /** @hidden */
-  _labelId: string;
-  /** @hidden */
-  _fn: Function;
-  /** @hidden */
-  id: string;
-
-  /**
-   * @output {Checkbox} Emitted when the checkbox value changes.
-   */
-  @Output() ionChange: EventEmitter<Checkbox> = new EventEmitter<Checkbox>();
-
-  constructor(
-    config: Config,
-    private _form: Form,
-    @Optional() private _item: Item,
-    elementRef: ElementRef,
-    renderer: Renderer,
-    private _cd: ChangeDetectorRef
-  ) {
-    super(config, elementRef, renderer, 'checkbox');
-
-    _form.register(this);
-
-    if (_item) {
-      this.id = 'chk-' + _item.registerInput('checkbox');
-      this._labelId = 'lbl-' + _item.id;
-      this._item.setElementClass('item-checkbox', true);
-    }
-  }
-
-  /**
-   * @hidden
-   */
-  @HostListener('click', ['$event'])
-  _click(ev: UIEvent) {
-    console.debug('checkbox, checked');
-    ev.preventDefault();
-    ev.stopPropagation();
-    this.onChange(!this._checked);
-  }
+export class Checkbox extends BaseInput<boolean> implements IonicTapInput, AfterContentInit, OnDestroy {
 
   /**
    * @input {boolean} If true, the element is selected.
    */
   @Input()
   get checked(): boolean {
-    return this._checked;
+    return this.value;
   }
 
   set checked(val: boolean) {
-    this._setChecked(isTrueProperty(val));
-    this.onChange(this._checked);
+    this.value = val;
   }
 
-  /**
-   * @hidden
-   */
-  _setChecked(isChecked: boolean) {
-    if (isChecked !== this._checked) {
-      this._checked = isChecked;
-      if (this._init) {
-        this.ionChange.emit(this);
-      }
-      this._item && this._item.setElementClass('item-checkbox-checked', isChecked);
-    }
-  }
-
-  /**
-   * @hidden
-   */
-  writeValue(val: any) {
-    this._setChecked(isTrueProperty(val));
-  }
-
-  /**
-   * @hidden
-   */
-  registerOnChange(fn: Function): void {
-    this._fn = fn;
-    this.onChange = (isChecked: boolean) => {
-      console.debug('checkbox, onChange', isChecked);
-      fn(isChecked);
-      this._setChecked(isChecked);
-      this.onTouched();
-      this._cd.detectChanges();
-    };
-  }
-
-  /**
-   * @hidden
-   */
-  registerOnTouched(fn: any) { this.onTouched = fn; }
-
-  /**
-   * @input {boolean} If true, the user cannot interact with this element.
-   */
-  @Input()
-  get disabled(): boolean {
-    return this._disabled;
-  }
-
-  set disabled(val: boolean) {
-    this._disabled = isTrueProperty(val);
-    this._item && this._item.setElementClass('item-checkbox-disabled', this._disabled);
-  }
-
-  /**
-   * @hidden
-   */
-  onChange(isChecked: boolean) {
-    // used when this input does not have an ngModel or formControlName
-    console.debug('checkbox, onChange (no ngModel)', isChecked);
-    this._setChecked(isChecked);
-    this.onTouched();
-    this._cd.detectChanges();
+  constructor(
+    config: Config,
+    form: Form,
+    @Optional() item: Item,
+    elementRef: ElementRef,
+    renderer: Renderer,
+    private _cd: ChangeDetectorRef
+  ) {
+    super(config, elementRef, renderer, 'checkbox', form, item);
   }
 
   /**
@@ -207,26 +106,27 @@ export class Checkbox extends Ion implements IonicTapInput, AfterContentInit, Co
   /**
    * @hidden
    */
-  onTouched() { }
-
-  /**
-   * @hidden
-   */
-  ngAfterContentInit() {
-    this._init = true;
+  @HostListener('click', ['$event'])
+  _click(ev: UIEvent) {
+    console.debug('checkbox, checked');
+    ev.preventDefault();
+    ev.stopPropagation();
+    this.value = !this.value;
   }
 
   /**
    * @hidden
    */
-  setDisabledState(isDisabled: boolean) {
-    this.disabled = isDisabled;
+  _setChecked(isChecked: boolean) {
+    this.value = isChecked;
   }
 
   /**
    * @hidden
    */
-  ngOnDestroy() {
-    this._form.deregister(this);
+  updateInput() {
+    this._item && this._item.setElementClass('item-checkbox-checked', this.value);
+    this._cd.detectChanges();
   }
+
 }

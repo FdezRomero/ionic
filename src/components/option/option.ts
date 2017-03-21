@@ -52,18 +52,6 @@ export class Option {
   }
 
   /**
-   * @input {boolean} If true, the user cannot interact with this element.
-   */
-  @Input()
-  get disabled(): boolean {
-    return this._disabled;
-  }
-
-  set disabled(val: boolean) {
-    this._disabled = isTrueProperty(val);
-  }
-
-  /**
    * @hidden
    */
   get text() {

@@ -1,10 +1,9 @@
-import { ContentChildren, Directive, ElementRef, EventEmitter, Input, Output, Optional, QueryList, Renderer } from '@angular/core';
+import { ContentChildren, Directive, ElementRef, Optional, QueryList, Renderer } from '@angular/core';
 import { NgControl } from '@angular/forms';
 
 import { Config } from '../../config/config';
-import { Ion } from '../ion';
 import { isPresent, isTrueProperty } from '../../util/util';
-
+import { BaseInput } from '../../util/base-input';
 import { SegmentButton } from './segment-button';
 
 /**
@@ -66,19 +65,7 @@ import { SegmentButton } from './segment-button';
 @Directive({
   selector: 'ion-segment'
 })
-export class Segment extends Ion {
-  _disabled: boolean = false;
-
-  /**
-   * @hidden
-   */
-  value: string;
-
-  /**
-   * @output {Any} Emitted when a segment button has been changed.
-   */
-  @Output() ionChange: EventEmitter<SegmentButton> = new EventEmitter<SegmentButton>();
-
+export class Segment extends BaseInput<string> {
 
   /**
    * @hidden
@@ -91,24 +78,15 @@ export class Segment extends Ion {
     renderer: Renderer,
     @Optional() ngControl: NgControl
   ) {
-    super(config, elementRef, renderer, 'segment');
+    super(config, elementRef, renderer, 'segment', null, null);
 
     if (ngControl) {
       ngControl.valueAccessor = this;
     }
   }
 
-  /**
-   * @input {boolean} If true, the user cannot interact with any of the buttons in the segment.
-   */
-  @Input()
-  get disabled(): boolean {
-    return this._disabled;
-  }
-
-  set disabled(val: boolean) {
+  setDisabledState(val: boolean) {
     this._disabled = isTrueProperty(val);
-
     if (this._buttons) {
       this._buttons.forEach(button => {
         button._setElementClass('segment-button-disabled', this._disabled);
@@ -130,46 +108,23 @@ export class Segment extends Ion {
     }
   }
 
-  /**
-   * @hidden
-   */
-  ngAfterViewInit() {
-   this._buttons.forEach(button => {
-     button.ionSelect.subscribe((selectedButton: any) => {
-       this.writeValue(selectedButton.value);
-       this.onChange(selectedButton.value);
-       this.ionChange.emit(selectedButton);
-     });
-
-     if (isPresent(this.value)) {
-       button.isActive = (button.value === this.value);
-     }
-
-     if (isTrueProperty(this._disabled)) {
-       button._setElementClass('segment-button-disabled', this._disabled);
-     }
-   });
+  updateInput() {
+    if (this._buttons) {
+      var buttons = this._buttons.toArray();
+      var value = this.value;
+      for (var button of buttons) {
+        button.isActive = (button.value === value);
+      }
+    }
   }
 
   /**
    * @hidden
    */
-  onChange = (_: any) => {};
-  /**
-   * @hidden
-   */
-  onTouched = (_: any) => {};
-
-  /**
-   * @hidden
-   * Set the function to be called when the control receives a change event.
-   */
-  registerOnChange(fn: any) { this.onChange = fn; }
-
-  /**
-   * @hidden
-   * Set the function to be called when the control receives a touch event.
-   */
-  registerOnTouched(fn: any) { this.onTouched = fn; }
+  ngAfterViewInit() {
+    this._buttons.forEach(button => {
+      button.ionSelect.subscribe((selectedButton: any) => this.value = selectedButton.value);
+    });
+  }
 
 }
